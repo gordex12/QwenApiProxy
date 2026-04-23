@@ -54,15 +54,6 @@ When sending your API request, you can specify any of the models below in the `m
    ```bash
    python app.py
    ```
-   *Or simply run the `.exe` file if you have built it (see below).*
-
-### 📦 Building the Executable
-You can easily package the server into a standalone Windows Executable using PyInstaller:
-```bash
-pip install pyinstaller
-pyinstaller --name "QwenApiProxy" --onefile app.py
-```
-*The executable will be generated inside the `dist/` folder.*
 
 ### 🧪 Testing
 The `tests/` directory contains generic Chat testing interfaces for both OpenAI and Claude formats.
@@ -117,15 +108,6 @@ Ao enviar a requisição para a API, você pode especificar qualquer um dos mode
    ```bash
    python app.py
    ```
-   *Ou simplesmente execute o arquivo `.exe` caso o tenha compilado (veja abaixo).*
-
-### 📦 Criando o Executável
-Você pode facilmente empacotar o servidor em um executável independente para Windows usando o PyInstaller:
-```bash
-pip install pyinstaller
-pyinstaller --name "QwenApiProxy" --onefile app.py
-```
-*O executável será gerado dentro da pasta `dist/`.*
 
 ### 🧪 Testes
 O diretório `tests/` contém interfaces genéricas de teste de Chat para os formatos OpenAI e Claude.
