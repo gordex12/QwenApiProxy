@@ -20,6 +20,7 @@ This project bypasses the need for an official developer API key by seamlessly a
 - **Thinking Mode Support**: Automatically parses `<think>` tags and maps them to Server-Sent Events (SSE) for seamless compatibility with O1/Claude tools.
 - **Stateless Architecture**: By compressing context dynamically, it bypasses Qwen's array restrictions while retaining deep context history.
 - **Fully Asynchronous Streaming**: Lightning-fast, chunk-by-chunk streaming support for a flicker-free UI experience.
+- **Unlimited Free Usage**: By directly proxying the web interface, it bypasses standard API rate limits, allowing practically unlimited usage without paying for an official developer API Key.
 
 ### 🤖 Supported Models
 **Important Note:** *Absolutely ALL models available on the official `chat.qwen.ai` platform are supported by this proxy.* 
@@ -74,6 +75,7 @@ Este projeto contorna a necessidade de uma chave de API oficial de desenvolvedor
 - **Suporte ao Modo "Pensamento"**: Faz a análise (parse) automática das tags `<think>` e as mapeia para Server-Sent Events (SSE) para compatibilidade perfeita com ferramentas do padrão O1/Claude.
 - **Arquitetura Stateless**: Ao comprimir o contexto dinamicamente, ele contorna as restrições de array do Qwen enquanto mantém um profundo histórico de contexto.
 - **Streaming Totalmente Assíncrono**: Suporte a streaming extremamente rápido (chunk-by-chunk) para uma experiência de UI contínua e sem travamentos.
+- **Uso Gratuito e Sem Limites**: Ao espelhar diretamente a interface web, ele ignora os limites (rate limits) e cobranças das APIs padrão, permitindo uso praticamente ilimitado sem a necessidade de comprar uma API Key de desenvolvedor oficial.
 
 ### 🤖 Modelos Suportados
 **Observação Importante:** *Absolutamente TODOS os modelos disponíveis na plataforma oficial `chat.qwen.ai` funcionam e são suportados por este proxy.*
