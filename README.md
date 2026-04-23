@@ -21,6 +21,16 @@ This project bypasses the need for an official developer API key by seamlessly a
 - **Stateless Architecture**: By compressing context dynamically, it bypasses Qwen's array restrictions while retaining deep context history.
 - **Fully Asynchronous Streaming**: Lightning-fast, chunk-by-chunk streaming support for a flicker-free UI experience.
 
+### 🤖 Supported Models
+**Important Note:** *Absolutely ALL models available on the official `chat.qwen.ai` platform are supported by this proxy.* 
+When sending your API request, you can specify any of the models below in the `model` parameter:
+- `qwen3.6-max-preview`
+- `qwen3.6-plus`
+- `qwen3.6-plus-preview`
+- `qwen3.5-plus`
+- `qwen3.5-omni-plus`
+*(If new models are added to the Qwen website, you can simply pass their exact names in your API calls, and they will work automatically!)*
+
 ### 🚀 Getting Started
 
 #### Prerequisites
@@ -73,6 +83,16 @@ Este projeto contorna a necessidade de uma chave de API oficial de desenvolvedor
 - **Suporte ao Modo "Pensamento"**: Faz a análise (parse) automática das tags `<think>` e as mapeia para Server-Sent Events (SSE) para compatibilidade perfeita com ferramentas do padrão O1/Claude.
 - **Arquitetura Stateless**: Ao comprimir o contexto dinamicamente, ele contorna as restrições de array do Qwen enquanto mantém um profundo histórico de contexto.
 - **Streaming Totalmente Assíncrono**: Suporte a streaming extremamente rápido (chunk-by-chunk) para uma experiência de UI contínua e sem travamentos.
+
+### 🤖 Modelos Suportados
+**Observação Importante:** *Absolutamente TODOS os modelos disponíveis na plataforma oficial `chat.qwen.ai` funcionam e são suportados por este proxy.*
+Ao enviar a requisição para a API, você pode especificar qualquer um dos modelos abaixo no parâmetro `model`:
+- `qwen3.6-max-preview`
+- `qwen3.6-plus`
+- `qwen3.6-plus-preview`
+- `qwen3.5-plus`
+- `qwen3.5-omni-plus`
+*(Se novos modelos forem adicionados ao site do Qwen, basta passar o nome exato deles na sua chamada de API e eles funcionarão automaticamente!)*
 
 ### 🚀 Começando
 
