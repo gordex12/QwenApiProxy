@@ -2,3 +2,5 @@ flask
 requests
 python-dotenv
 selenium
+Pillow
+oss2

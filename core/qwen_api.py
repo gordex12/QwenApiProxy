@@ -39,6 +39,85 @@ class SimpleQwenAPI:
             return data["data"]["id"]
         return None
 
+    def upload_image_to_oss(self, base64_str: str) -> dict:
+        import base64
+        import uuid
+        import oss2
+        from .image_utils import optimize_base64_image
+
+        try:
+            if not base64_str.startswith("data:"):
+                base64_str = f"data:image/jpeg;base64,{base64_str}"
+            
+            # The optimization ensures the image fits constraints (not too big, but > 10x10)
+            optimized_b64 = optimize_base64_image(base64_str)
+            raw_b64 = optimized_b64.split(",", 1)[-1]
+            image_data = base64.b64decode(raw_b64)
+            filesize = len(image_data)
+
+            sts_payload = {
+                'filename': 'image.jpg',
+                'filesize': filesize,
+                'filetype': 'image'
+            }
+            sts_res = requests.post(f'{self.BASE_URL}/api/v2/files/getstsToken', json=sts_payload, headers=self.get_headers())
+            sts_data = sts_res.json().get('data', {})
+
+            if not sts_data:
+                print("[OSS Upload] Failed to get STS token")
+                return None
+
+            access_key_id = sts_data['access_key_id']
+            access_key_secret = sts_data['access_key_secret']
+            security_token = sts_data['security_token']
+            endpoint = sts_data['endpoint']
+            bucket_name = sts_data['bucketname']
+            file_path = sts_data['file_path']
+            file_id = sts_data['file_id']
+            file_url = sts_data['file_url']
+
+            auth = oss2.StsAuth(access_key_id, access_key_secret, security_token)
+            bucket = oss2.Bucket(auth, endpoint, bucket_name)
+            bucket.put_object(file_path, image_data, headers={'Content-Type': 'image/jpeg'})
+            
+            timestamp = int(time.time() * 1000)
+            user_id = file_path.split('/')[0]
+
+            return {
+                "type": "image",
+                "file": {
+                    "created_at": timestamp,
+                    "data": {},
+                    "filename": "image.jpg",
+                    "hash": None,
+                    "id": file_id,
+                    "user_id": user_id,
+                    "meta": {
+                        "name": "image.jpg",
+                        "size": filesize,
+                        "content_type": "image/jpeg"
+                    },
+                    "update_at": timestamp
+                },
+                "id": file_id,
+                "url": file_url,
+                "name": "image.jpg",
+                "collection_name": "",
+                "progress": 0,
+                "status": "uploaded",
+                "greenNet": "success",
+                "size": filesize,
+                "error": "",
+                "itemId": str(uuid.uuid4()),
+                "file_type": "image/jpeg",
+                "showType": "image",
+                "file_class": "vision",
+                "uploadTaskId": str(uuid.uuid4())
+            }
+        except Exception as e:
+            print(f"[OSS Upload] Error uploading image: {e}")
+            return None
+
     def send_message(self, messages_array: list):
         """Send a message to the Qwen API and yield the stream chunks."""
         chat_id = self.init_chat()
@@ -50,30 +129,47 @@ class SimpleQwenAPI:
         timestamp = int(time.time() * 1000)
 
         qwen_messages = []
+        qwen_files = []
         
-        # Since the Qwen web backend blocks arrays containing multiple messages
-        # and we operate in a 100% stateless manner (creating new chats on every request),
-        # we need to compact the history and convert it into a single rich text prompt.
         full_context_prompt = ""
         for open_msg in messages_array:
             role = open_msg.get("role", "user")
-            content = open_msg.get("content", "")
+            raw_content = open_msg.get("content", "")
+            content_str = ""
             
-            if role == "assistant" and "<think>" in content:
-                content = content.split("</think>")[-1].strip()
+            if isinstance(raw_content, list):
+                text_parts = []
+                for part in raw_content:
+                    if part.get("type") == "text":
+                        text_parts.append(part.get("text", ""))
+                    elif part.get("type") == "image_url":
+                        image_url = part.get("image_url", {}).get("url", "")
+                        if image_url.startswith("data:image"):
+                            print("[QwenAPI] Found base64 image, uploading to OSS...")
+                            file_obj = self.upload_image_to_oss(image_url)
+                            if file_obj:
+                                qwen_files.append(file_obj)
+                        else:
+                            text_parts.append(f"![image]({image_url})")
+                content_str = "\n".join(text_parts)
+            else:
+                content_str = raw_content
+                
+            if role == "assistant" and "<think>" in content_str:
+                content_str = content_str.split("</think>")[-1].strip()
                 
             if role == "system":
-                full_context_prompt += f"[SYSTEM]\n{content}\n\n"
+                full_context_prompt += f"[SYSTEM]\n{content_str}\n\n"
             elif role == "assistant":
                 tool_calls = open_msg.get("tool_calls", [])
                 if tool_calls:
-                    content += "\n[Action Taken]: " + json.dumps(tool_calls, ensure_ascii=False)
-                full_context_prompt += f"[ASSISTANT]\n{content}\n\n"
+                    content_str += "\n[Action Taken]: " + json.dumps(tool_calls, ensure_ascii=False)
+                full_context_prompt += f"[ASSISTANT]\n{content_str}\n\n"
             elif role in ["tool", "function"]:
                 tool_id = open_msg.get("tool_call_id", "")
-                full_context_prompt += f"[TOOL RESULT ({tool_id})]\n{content}\n\n"
+                full_context_prompt += f"[TOOL RESULT ({tool_id})]\n{content_str}\n\n"
             else:
-                full_context_prompt += f"[USER]\n{content}\n\n"
+                full_context_prompt += f"[USER]\n{content_str}\n\n"
 
         full_context_prompt += "[ASSISTANT]\n"
 
@@ -97,7 +193,7 @@ class SimpleQwenAPI:
             "parent_id": None,
             "parentId": None,
             "user_action": "chat",
-            "files": [],
+            "files": qwen_files,
             "models": [self.model],
             "chat_type": "t2t"
         }

@@ -2,6 +2,7 @@ import time
 import uuid
 import json
 from flask import Blueprint, request, jsonify, Response, current_app
+from api.usage_routes import track_request
 
 openai_bp = Blueprint('openai', __name__)
 
@@ -14,7 +15,21 @@ def chat_completions():
     if not messages:
         return jsonify({"error": "No messages provided"}), 400
     
-    print(f"[OpenAI API] New stateless request received with {len(messages)} messages; stream={is_stream}")
+    # Normalize messages to handle images and text blocks
+    normalized_messages = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        raw_content = msg.get("content", "")
+        new_msg = {"role": role, "content": raw_content}
+        if "tool_calls" in msg:
+            new_msg["tool_calls"] = msg["tool_calls"]
+        if "tool_call_id" in msg:
+            new_msg["tool_call_id"] = msg["tool_call_id"]
+        if "name" in msg:
+            new_msg["name"] = msg["name"]
+        normalized_messages.append(new_msg)
+    
+    print(f"[OpenAI API] New stateless request received with {len(normalized_messages)} messages; stream={is_stream}")
     
     tools = req.get("tools", [])
     if tools:
@@ -23,13 +38,21 @@ def chat_completions():
         tool_prompt += "```tool_call\n{\"name\": \"tool_name\", \"arguments\": {\"arg1\": \"value1\"}}\n```\n"
         tool_prompt += "If you do not need to use a tool, just answer normally without the tool_call block."
         
-        if messages and messages[0].get("role") == "system":
-            messages[0]["content"] += "\n\n" + tool_prompt
+        if normalized_messages and normalized_messages[0].get("role") == "system":
+            normalized_messages[0]["content"] += "\n\n" + tool_prompt
         else:
-            messages.insert(0, {"role": "system", "content": tool_prompt})
+            normalized_messages.insert(0, {"role": "system", "content": tool_prompt})
             
     qwen_session = current_app.config['QWEN_SESSION']
     
+    # Count images for usage tracking
+    image_count = sum(
+        1 for msg in normalized_messages
+        if isinstance(msg.get("content"), list)
+        for part in (msg.get("content") if isinstance(msg.get("content"), list) else [])
+        if part.get("type") == "image_url"
+    )
+
     # Generator that will consume Qwen stream chunks and format them into OpenAI format
     def generate_stream():
         chat_id = f"chatcmpl-{uuid.uuid4()}"
@@ -41,7 +64,7 @@ def chat_completions():
         final_stream_usage = {}
         answer_buffer = ""
 
-        for chunk in qwen_session.send_message(messages):
+        for chunk in qwen_session.send_message(normalized_messages):
             if "error" in chunk:
                 yield f'data: {{"error": "{chunk["error"]}"}}\n\n'
                 break
@@ -155,6 +178,13 @@ def chat_completions():
                         "usage": usage_payload
                     }
                     yield f"data: {json.dumps(sse_usage)}\n\n"
+
+                track_request(
+                    "openai",
+                    input_tokens=final_stream_usage.get("input_tokens", 0),
+                    output_tokens=final_stream_usage.get("output_tokens", 0),
+                    images=image_count
+                )
                     
         yield "data: [DONE]\n\n"
 
@@ -225,6 +255,13 @@ def chat_completions():
             "total_tokens": final_usage.get("total_tokens", 0)
         }
     }
+
+    track_request(
+        "openai",
+        input_tokens=final_usage.get("input_tokens", 0),
+        output_tokens=final_usage.get("output_tokens", 0),
+        images=image_count
+    )
     
     if tool_calls:
         response_data["choices"][0]["message"]["tool_calls"] = tool_calls

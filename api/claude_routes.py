@@ -2,6 +2,7 @@ import time
 import uuid
 import json
 from flask import Blueprint, request, jsonify, Response, current_app
+from api.usage_routes import track_request
 
 claude_bp = Blueprint('claude', __name__)
 
@@ -48,21 +49,41 @@ def claude_messages():
         role = msg.get("role", "user")
         raw_content = msg.get("content", "")
         if isinstance(raw_content, list):
-            texts = []
+            blocks = []
             for block in raw_content:
                 if block.get("type", "") == "text":
-                    texts.append(block.get("text", ""))
+                    blocks.append({"type": "text", "text": block.get("text", "")})
+                elif block.get("type", "") == "image":
+                    source = block.get("source", {})
+                    if source.get("type") == "base64":
+                        b64_data = source.get("data", "")
+                        mime = source.get("media_type", "image/jpeg")
+                        # We convert the Claude format to OpenAI format
+                        blocks.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime};base64,{b64_data}"
+                            }
+                        })
                 elif block.get("type", "") == "tool_result":
                     content_val = block.get("content", "")
                     if isinstance(content_val, list):
                         content_val = " ".join([b.get("text", "") for b in content_val if b.get("type") == "text"])
-                    texts.append(f"[TOOL RESULT ({block.get('tool_use_id', '')})]\n{content_val}")
+                    blocks.append({"type": "text", "text": f"[TOOL RESULT ({block.get('tool_use_id', '')})]\n{content_val}"})
                 elif block.get("type", "") == "tool_use":
-                    texts.append(f"\n[Action Taken]: {json.dumps(block, ensure_ascii=False)}")
-            content = "\n\n".join(texts)
+                    blocks.append({"type": "text", "text": f"\n[Action Taken]: {json.dumps(block, ensure_ascii=False)}"})
+            content = blocks
         else:
             content = raw_content
         normalized_messages.append({"role": role, "content": content})
+
+    # Count images for usage tracking
+    image_count = sum(
+        1 for msg in normalized_messages
+        if isinstance(msg.get("content"), list)
+        for part in (msg.get("content") if isinstance(msg.get("content"), list) else [])
+        if part.get("type") == "image_url"
+    )
 
     def generate_claude_stream():
         msg_id = f"msg_claude_{uuid.uuid4()}"
@@ -178,6 +199,13 @@ def claude_messages():
         # message_stop
         yield f'event: message_stop\ndata: {{"type": "message_stop"}}\n\n'
 
+        track_request(
+            "claude",
+            input_tokens=final_stream_usage.get("input_tokens", 0),
+            output_tokens=final_stream_usage.get("output_tokens", 0),
+            images=image_count
+        )
+
     if is_stream:
         return Response(generate_claude_stream(), mimetype='text/event-stream')
 
@@ -253,5 +281,12 @@ def claude_messages():
             "output_tokens": final_usage.get("output_tokens", 0)
         }
     }
+
+    track_request(
+        "claude",
+        input_tokens=final_usage.get("input_tokens", 0),
+        output_tokens=final_usage.get("output_tokens", 0),
+        images=image_count
+    )
     
     return jsonify(response_data)
