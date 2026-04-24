@@ -1,6 +1,7 @@
 import time
 import uuid
 import json
+import hashlib
 import requests
 
 class SimpleQwenAPI:
@@ -11,6 +12,7 @@ class SimpleQwenAPI:
         self.model = "qwen3.6-plus"
         self.chat_id = None
         self.parent_id = None
+        self._image_cache = {}  # SHA-256 -> file_obj cache to avoid re-uploads
 
     def get_headers(self):
         """Return the headers required for Qwen API requests."""
@@ -52,6 +54,13 @@ class SimpleQwenAPI:
             # The optimization ensures the image fits constraints (not too big, but > 10x10)
             optimized_b64 = optimize_base64_image(base64_str)
             raw_b64 = optimized_b64.split(",", 1)[-1]
+
+            # Check cache by content hash to avoid re-uploading the same image
+            content_hash = hashlib.sha256(raw_b64.encode("utf-8")).hexdigest()
+            if content_hash in self._image_cache:
+                print(f"[QwenAPI] Image cache hit ({content_hash[:12]}...), skipping upload")
+                return self._image_cache[content_hash]
+
             image_data = base64.b64decode(raw_b64)
             filesize = len(image_data)
 
@@ -83,7 +92,7 @@ class SimpleQwenAPI:
             timestamp = int(time.time() * 1000)
             user_id = file_path.split('/')[0]
 
-            return {
+            result = {
                 "type": "image",
                 "file": {
                     "created_at": timestamp,
@@ -114,6 +123,11 @@ class SimpleQwenAPI:
                 "file_class": "vision",
                 "uploadTaskId": str(uuid.uuid4())
             }
+
+            # Cache the result so the same image won't be re-uploaded
+            self._image_cache[content_hash] = result
+            print(f"[QwenAPI] Image cached ({content_hash[:12]}...)")
+            return result
         except Exception as e:
             print(f"[OSS Upload] Error uploading image: {e}")
             return None
