@@ -145,7 +145,9 @@ class SimpleQwenAPI:
         qwen_messages = []
         qwen_files = []
         
-        full_context_prompt = ""
+        system_blocks = []
+        history_blocks = []
+        
         for open_msg in messages_array:
             role = open_msg.get("role", "user")
             raw_content = open_msg.get("content", "")
@@ -170,22 +172,40 @@ class SimpleQwenAPI:
                 content_str = raw_content
                 
             if role == "assistant" and "<think>" in content_str:
-                content_str = content_str.split("</think>")[-1].strip()
+                content_str = content_str.replace("<think>", "<past_reasoning>").replace("</think>", "</past_reasoning>")
                 
             if role == "system":
-                full_context_prompt += f"[SYSTEM]\n{content_str}\n\n"
+                system_blocks.append(f"<system_directives>\n{content_str.strip()}\n</system_directives>")
             elif role == "assistant":
                 tool_calls = open_msg.get("tool_calls", [])
                 if tool_calls:
-                    content_str += "\n[Action Taken]: " + json.dumps(tool_calls, ensure_ascii=False)
-                full_context_prompt += f"[ASSISTANT]\n{content_str}\n\n"
+                    tool_calls_str = ""
+                    for tc in tool_calls:
+                        tc_id = tc.get("id", "")
+                        fn_name = tc.get("function", {}).get("name", "")
+                        fn_args = tc.get("function", {}).get("arguments", "{}")
+                        if not isinstance(fn_args, str):
+                            fn_args = json.dumps(fn_args, ensure_ascii=False)
+                        tool_calls_str += f'<tool_call id="{tc_id}" name="{fn_name}">\n{fn_args}\n</tool_call>\n'
+                    content_str += f"\n<assistant_action>\n{tool_calls_str.strip()}\n</assistant_action>"
+                history_blocks.append(f"<assistant>\n{content_str.strip()}\n</assistant>")
             elif role in ["tool", "function"]:
                 tool_id = open_msg.get("tool_call_id", "")
-                full_context_prompt += f"[TOOL RESULT ({tool_id})]\n{content_str}\n\n"
+                history_blocks.append(f'<tool_result id="{tool_id}">\n{content_str.strip()}\n</tool_result>')
             else:
-                full_context_prompt += f"[USER]\n{content_str}\n\n"
+                history_blocks.append(f"<user>\n{content_str.strip()}\n</user>")
 
-        full_context_prompt += "[ASSISTANT]\n"
+        full_context_prompt = "\n\n".join(system_blocks) + "\n\n"
+        
+        if len(history_blocks) > 1:
+            full_context_prompt += "<execution_history>\n"
+            full_context_prompt += "\n\n".join(history_blocks[:-1])
+            full_context_prompt += "\n</execution_history>\n\n"
+            full_context_prompt += f"<current_task>\n{history_blocks[-1]}\n</current_task>"
+        elif len(history_blocks) == 1:
+            full_context_prompt += f"<current_task>\n{history_blocks[0]}\n</current_task>"
+
+        full_context_prompt += "\n\n<system_reminder>Crucial: You must think, reason, and write your final response in the EXACT same language that the user is speaking in the <current_task>.</system_reminder>"
 
         msg_id = str(uuid.uuid4())
         qwen_msg = {
