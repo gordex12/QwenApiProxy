@@ -18,6 +18,7 @@ This project bypasses the need for an official developer API key by seamlessly a
 - **Dual API Compatibility**: Native support for `/v1/chat/completions` (OpenAI format) and `/v1/messages` (Anthropic format).
 - **Auto-Authentication**: If no token is provided, a browser window opens automatically, awaits your manual login, and stealthily captures the session cookie to populate the `.env` file.
 - **Thinking Mode Support**: Automatically parses `<think>` tags and maps them to Server-Sent Events (SSE) for seamless compatibility with O1/Claude tools.
+- **Function Calling / Tool Use**: Native integration with IDEs and agents via comprehensive tool use support. Intercepts external tool calls, formats system prompts automatically, handles stateless execution logic, and returns results in standard OpenAI/Anthropic format for a seamless AI agent experience.
 - **Stateless Architecture**: By compressing context dynamically, it bypasses Qwen's array restrictions while retaining deep context history.
 - **Fully Asynchronous Streaming**: Lightning-fast, chunk-by-chunk streaming support for a flicker-free UI experience.
 - **Unlimited Free Usage!**
@@ -73,6 +74,7 @@ Este projeto contorna a necessidade de uma chave de API oficial de desenvolvedor
 - **Compatibilidade Dupla de API**: Suporte nativo para `/v1/chat/completions` (formato OpenAI) e `/v1/messages` (formato Anthropic).
 - **Autenticação Automática**: Se nenhum token for fornecido, uma janela do navegador é aberta automaticamente, aguarda seu login manual e captura silenciosamente o cookie da sessão para preencher o arquivo `.env`.
 - **Suporte ao Modo "Pensamento"**: Faz a análise (parse) automática das tags `<think>` e as mapeia para Server-Sent Events (SSE) para compatibilidade perfeita com ferramentas do padrão O1/Claude.
+- **Function Calling / Tool Use**: Integração nativa com IDEs e agentes via suporte completo ao uso de ferramentas. Intercepta requisições de tools, formata automaticamente system prompts dinâmicos, lida com lógica de execução stateless e retorna o uso das ferramentas seguindo estritamente os padrões e respostas da OpenAI/Anthropic.
 - **Arquitetura Stateless**: Ao comprimir o contexto dinamicamente, ele contorna as restrições de array do Qwen enquanto mantém um profundo histórico de contexto.
 - **Streaming Totalmente Assíncrono**: Suporte a streaming extremamente rápido (chunk-by-chunk) para uma experiência de UI contínua e sem travamentos.
 - **Uso Gratuito e Sem Limites!**

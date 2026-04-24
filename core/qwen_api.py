@@ -65,7 +65,13 @@ class SimpleQwenAPI:
             if role == "system":
                 full_context_prompt += f"[SYSTEM]\n{content}\n\n"
             elif role == "assistant":
+                tool_calls = open_msg.get("tool_calls", [])
+                if tool_calls:
+                    content += "\n[Action Taken]: " + json.dumps(tool_calls, ensure_ascii=False)
                 full_context_prompt += f"[ASSISTANT]\n{content}\n\n"
+            elif role in ["tool", "function"]:
+                tool_id = open_msg.get("tool_call_id", "")
+                full_context_prompt += f"[TOOL RESULT ({tool_id})]\n{content}\n\n"
             else:
                 full_context_prompt += f"[USER]\n{content}\n\n"
 

@@ -16,6 +16,18 @@ def chat_completions():
     
     print(f"[OpenAI API] New stateless request received with {len(messages)} messages; stream={is_stream}")
     
+    tools = req.get("tools", [])
+    if tools:
+        tool_prompt = "You are an AI assistant. You have access to the following tools:\n" + json.dumps(tools, ensure_ascii=False) + "\n\n"
+        tool_prompt += "If you need to use a tool, YOU MUST respond ONLY with the following exact JSON format (and nothing else):\n"
+        tool_prompt += "```tool_call\n{\"name\": \"tool_name\", \"arguments\": {\"arg1\": \"value1\"}}\n```\n"
+        tool_prompt += "If you do not need to use a tool, just answer normally without the tool_call block."
+        
+        if messages and messages[0].get("role") == "system":
+            messages[0]["content"] += "\n\n" + tool_prompt
+        else:
+            messages.insert(0, {"role": "system", "content": tool_prompt})
+            
     qwen_session = current_app.config['QWEN_SESSION']
     
     # Generator that will consume Qwen stream chunks and format them into OpenAI format
@@ -27,6 +39,7 @@ def chat_completions():
         started_thinking = False
         finished_thinking = False
         final_stream_usage = {}
+        answer_buffer = ""
 
         for chunk in qwen_session.send_message(messages):
             if "error" in chunk:
@@ -47,26 +60,85 @@ def chat_completions():
                     emit_content += "<think>\n"
                     started_thinking = True
                 emit_content += content
+                
+                if emit_content:
+                    sse_data = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": model,
+                        "choices": [{"index": 0, "delta": {"content": emit_content}}]
+                    }
+                    yield f"data: {json.dumps(sse_data)}\n\n"
             else:
                 if started_thinking and not finished_thinking:
                     emit_content += "\n</think>\n\n"
                     finished_thinking = True
-                emit_content += content
+                    sse_data = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": model,
+                        "choices": [{"index": 0, "delta": {"content": emit_content}}]
+                    }
+                    yield f"data: {json.dumps(sse_data)}\n\n"
                 
-            if emit_content:
-                sse_data = {
-                    "id": chat_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"content": emit_content}
-                    }]
-                }
-                yield f"data: {json.dumps(sse_data)}\n\n"
+                if tools:
+                    answer_buffer += content
+                else:
+                    emit_content = content
+                    if emit_content:
+                        sse_data = {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model,
+                            "choices": [{"index": 0, "delta": {"content": emit_content}}]
+                        }
+                        yield f"data: {json.dumps(sse_data)}\n\n"
 
             if chunk.get("status") == "finished":
+                if tools and answer_buffer:
+                    if "```tool_call" in answer_buffer:
+                        try:
+                            pre_text = answer_buffer.split("```tool_call")[0].strip()
+                            if pre_text:
+                                sse_data = {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"content": pre_text}}]}
+                                yield f"data: {json.dumps(sse_data)}\n\n"
+                                
+                            json_str = answer_buffer.split("```tool_call")[1].split("```")[0].strip()
+                            tool_call_data = json.loads(json_str)
+                            
+                            tool_chunk = {
+                                "id": chat_id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": model,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {
+                                        "tool_calls": [{
+                                            "index": 0,
+                                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                                            "type": "function",
+                                            "function": {
+                                                "name": tool_call_data["name"],
+                                                "arguments": json.dumps(tool_call_data.get("arguments", {}), ensure_ascii=False)
+                                            }
+                                        }]
+                                    },
+                                    "finish_reason": "tool_calls"
+                                }]
+                            }
+                            yield f"data: {json.dumps(tool_chunk)}\n\n"
+                        except Exception as e:
+                            print(f"[Tool Call Stream Error] {e}")
+                            sse_data = {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"content": answer_buffer}}]}
+                            yield f"data: {json.dumps(sse_data)}\n\n"
+                    else:
+                        sse_data = {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"content": answer_buffer}}]}
+                        yield f"data: {json.dumps(sse_data)}\n\n"
+                
                 # Final usage tag optionally included as OpenAI behavior when returning usage on stream
                 if final_stream_usage:
                     usage_payload = {
@@ -114,6 +186,26 @@ def chat_completions():
         if chunk.get("usage"):
             final_usage = chunk["usage"]
 
+    finish_reason = "stop"
+    tool_calls = None
+    
+    if tools and "```tool_call" in full_text:
+        try:
+            json_str = full_text.split("```tool_call")[1].split("```")[0].strip()
+            tool_call_data = json.loads(json_str)
+            tool_calls = [{
+                "id": f"call_{uuid.uuid4().hex[:8]}",
+                "type": "function",
+                "function": {
+                    "name": tool_call_data["name"],
+                    "arguments": json.dumps(tool_call_data.get("arguments", {}), ensure_ascii=False)
+                }
+            }]
+            finish_reason = "tool_calls"
+            full_text = full_text.split("```tool_call")[0].strip()
+        except Exception as e:
+            print(f"[Tool Call Error] {e}")
+
     response_data = {
         "id": f"chatcmpl-{uuid.uuid4()}",
         "object": "chat.completion",
@@ -125,7 +217,7 @@ def chat_completions():
                 "role": "assistant",
                 "content": full_text
             },
-            "finish_reason": "stop"
+            "finish_reason": finish_reason
         }],
         "usage": {
             "prompt_tokens": final_usage.get("input_tokens", 0),
@@ -134,4 +226,7 @@ def chat_completions():
         }
     }
     
+    if tool_calls:
+        response_data["choices"][0]["message"]["tool_calls"] = tool_calls
+        
     return jsonify(response_data)
