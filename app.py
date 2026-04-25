@@ -29,6 +29,11 @@ def create_app() -> Flask:
     
     # 4. Register blueprints
     register_blueprints(app)
+
+    @app.route('/', methods=['GET', 'HEAD'])
+    def health_check():
+        """Root endpoint for connectivity checks."""
+        return "Qwen API Proxy is running", 200
     
     return app
 

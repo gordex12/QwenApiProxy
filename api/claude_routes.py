@@ -14,7 +14,6 @@ def claude_messages():
     is_stream = req.get("stream", False)
     
     qwen_session = current_app.config['QWEN_SESSION']
-    qwen_session.model = req.get("model", "qwen3.6-plus")
     
     if not anthropic_messages and not system_prompt:
         return jsonify({"error": {"type": "invalid_request_error", "message": "No messages provided"}}), 400
@@ -36,6 +35,11 @@ def claude_messages():
         tool_prompt += "If you need to use a tool, YOU MUST respond ONLY with the following exact JSON format (and nothing else):\n"
         tool_prompt += "```tool_call\n{\"name\": \"tool_name\", \"arguments\": {\"arg1\": \"value1\"}}\n```\n"
         tool_prompt += "If you do not need to use a tool, just answer normally without the tool_call block."
+        
+        # Claude allows system prompt to be a list of content blocks
+        if isinstance(system_prompt, list):
+            system_prompt = "\n".join([p.get("text", "") for p in system_prompt if isinstance(p, dict) and p.get("type") == "text"])
+            
         system_prompt = system_prompt + "\n\n" + tool_prompt if system_prompt else tool_prompt
         
     print(f"[Claude API] New stateless request received with {len(anthropic_messages)} messages; stream={is_stream}")
@@ -106,7 +110,7 @@ def claude_messages():
         answer_buffer = ""
         stop_reason = "end_turn"
         
-        for chunk in qwen_session.send_message(normalized_messages):
+        for chunk in qwen_session.send_message(normalized_messages, model=model):
             if "error" in chunk:
                 error_payload = {
                     "type": "error",
@@ -119,6 +123,21 @@ def claude_messages():
             is_think = chunk.get("is_thinking", False)
             if chunk.get("usage"):
                 final_stream_usage = chunk.get("usage")
+                
+            # If Qwen finished, we need to send the message_stop with the accumulated usage
+            if chunk.get("finish_reason"):
+                # Handle tool calls for Claude Code compatibility
+                stop_reason = "end_turn"
+                if "tool_call" in answer_buffer or chunk.get("finish_reason") == "tool_calls":
+                    stop_reason = "tool_use"
+                
+                # Update usage if available
+                input_tokens = final_stream_usage.get("input_tokens", estimated_in_tokens)
+                output_tokens = final_stream_usage.get("output_tokens", 0)
+                
+                yield f'event: message_delta\ndata: {{"type": "message_delta", "delta": {{"stop_reason": "{stop_reason}", "stop_sequence": null}}, "usage": {{"output_tokens": {output_tokens}}}}}\n\n'
+                yield f'event: message_stop\ndata: {{"type": "message_stop"}}\n\n'
+                break
                 
             emit_content = ""
             if is_think:
@@ -215,7 +234,8 @@ def claude_messages():
     finish_think = False
     final_usage = {}
     
-    for chunk in qwen_session.send_message(normalized_messages):
+    model = req.get("model", "qwen")
+    for chunk in qwen_session.send_message(normalized_messages, model=model):
         if "error" in chunk:
             return jsonify({"error": {"type": "api_error", "message": chunk["error"]}}), 500
             

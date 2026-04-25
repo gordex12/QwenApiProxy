@@ -64,7 +64,7 @@ def chat_completions():
         final_stream_usage = {}
         answer_buffer = ""
 
-        for chunk in qwen_session.send_message(normalized_messages):
+        for chunk in qwen_session.send_message(normalized_messages, model=model):
             if "error" in chunk:
                 yield f'data: {{"error": "{chunk["error"]}"}}\n\n'
                 break
@@ -197,7 +197,8 @@ def chat_completions():
     finish_think = False
     final_usage = {}
     
-    for chunk in qwen_session.send_message(messages):
+    model = req.get("model", "qwen")
+    for chunk in qwen_session.send_message(normalized_messages, model=model):
         if "error" in chunk:
             return jsonify({"error": chunk["error"]}), 500
             

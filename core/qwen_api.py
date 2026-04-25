@@ -3,13 +3,14 @@ import uuid
 import json
 import hashlib
 import requests
+import os
 
 class SimpleQwenAPI:
     BASE_URL = "https://chat.qwen.ai"
 
     def __init__(self, token: str):
         self.token = token
-        self.model = "qwen3.6-plus"
+        self.model = os.getenv("QWEN_MODEL", "qwen3.6-plus")
         self.chat_id = None
         self.parent_id = None
         self._image_cache = {}  # SHA-256 -> file_obj cache to avoid re-uploads
@@ -132,12 +133,17 @@ class SimpleQwenAPI:
             print(f"[OSS Upload] Error uploading image: {e}")
             return None
 
-    def send_message(self, messages_array: list):
+    def send_message(self, messages_array: list, model: str = None):
         """Send a message to the Qwen API and yield the stream chunks."""
         chat_id = self.init_chat()
         if not chat_id:
             yield {"error": "Error initializing Qwen session"}
             return
+
+        # Use the requested model if it starts with 'qwen', otherwise fallback to default
+        current_model = self.model
+        if model and model.lower().startswith("qwen"):
+            current_model = model
 
         url = f"{self.BASE_URL}/api/v2/chat/completions?chat_id={chat_id}"
         timestamp = int(time.time() * 1000)
@@ -228,7 +234,7 @@ class SimpleQwenAPI:
             "parentId": None,
             "user_action": "chat",
             "files": qwen_files,
-            "models": [self.model],
+            "models": [current_model],
             "chat_type": "t2t"
         }
         
@@ -240,7 +246,7 @@ class SimpleQwenAPI:
             "incremental_output": True,
             "chat_id": chat_id,
             "chat_mode": "local",
-            "model": self.model,
+            "model": current_model,
             "messages": qwen_messages,
             "timestamp": timestamp,
             "parent_id": None,
