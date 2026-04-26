@@ -156,7 +156,9 @@ class SimpleQwenAPI:
         
         for open_msg in messages_array:
             role = open_msg.get("role", "user")
-            raw_content = open_msg.get("content", "")
+            raw_content = open_msg.get("content")
+            if raw_content is None:
+                raw_content = ""
             content_str = ""
             
             if isinstance(raw_content, list):
